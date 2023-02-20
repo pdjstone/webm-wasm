@@ -11,7 +11,7 @@
  * limitations under the License.
  */
 
-import webmWasm from "../../dist/webm-wasm.js";
+import webmWasm from "./webm-wasm.js";
 
 // Below you find the “Interop between Node and Web is fun” section.
 // On the web you can communicate with the main thread via `self`.

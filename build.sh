@@ -12,7 +12,7 @@
 
 set -e
 
-export OPTIMIZE="-Os"
+export OPTIMIZE="-Os -msimd128 -msse"
 export LDFLAGS="${OPTIMIZE}"
 export CFLAGS="${OPTIMIZE}"
 export CPPFLAGS="${OPTIMIZE}"
@@ -40,8 +40,11 @@ test -n "$SKIP_LIBVPX" || (
     --disable-vp9-decoder \
     --disable-vp9-encoder \
     --disable-vp8-decoder \
+    --disable-examples \
+    --disable-tools \
+    --disable-docs \
     --target=generic-gnu
-  emmake make
+  emmake make -j8
 )
 echo "============================================="
 echo "Compiling libvpx done"
@@ -54,7 +57,7 @@ test -n "$SKIP_LIBWEBM" ||(
   rm -rf build-webm || true
   mkdir build-webm; cd build-webm
   emcmake cmake ../node_modules/libwebm
-  emmake make
+  emmake make -j8
 )
 echo "============================================="
 echo "Compiling libwebm done"
@@ -64,9 +67,10 @@ echo "============================================="
 echo "Compiling wasm bindings"
 echo "============================================="
 (
-  emcc \
+  em++ \
     ${OPTIMIZE} \
     --bind \
+    --no-entry \
     -s STRICT=1 \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s ASSERTIONS=0 \
@@ -74,6 +78,7 @@ echo "============================================="
     -s FILESYSTEM=0 \
     -s EXPORT_ES6=1 \
     -s MALLOC=emmalloc \
+    -s USE_VORBIS \
     --std=c++11 \
     -I node_modules/libyuv/include \
     -I node_modules/libvpx \

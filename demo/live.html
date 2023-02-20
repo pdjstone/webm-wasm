@@ -60,7 +60,7 @@ limitations under the License.
   }
 
   async function init() {
-    const worker = new Worker("../dist/webm-worker.js");
+    const worker = new Worker("../dist/webm-worker.js", {type: "module"});
     worker.postMessage("./webm-wasm.wasm");
     await nextEvent(worker, "message");
     worker.postMessage({

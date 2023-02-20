@@ -30,7 +30,7 @@ limitations under the License.
   }
 
   async function init() {
-    const worker = new Worker("../dist/webm-worker.js");
+    const worker = new Worker("../dist/webm-worker.js", {type:"module"});
     worker.postMessage("./webm-wasm.wasm");
     await nextEvent(worker, "message");
 
@@ -44,6 +44,7 @@ limitations under the License.
     gradient.addColorStop(0, "#000");
     gradient.addColorStop(1, "#fff");
     const maxFrames = 2 * framerate;
+    let t1 = Date.now();
     for (let i = 0; i < maxFrames; i++) {
       ctx.fillStyle = `hsl(${(i * 360) / maxFrames}, 100%, 50%)`;
       ctx.fillRect(0, 0, width, height);
@@ -54,6 +55,8 @@ limitations under the License.
     }
     worker.postMessage(null);
     const webm = (await nextEvent(worker, "message")).data;
+    let t = Date.now()-t1;
+    console.log("took ", t);
     const blob = new Blob([webm], { type: "video/webm" });
     const url = URL.createObjectURL(blob);
 

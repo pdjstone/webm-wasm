@@ -28,7 +28,7 @@
   }
 
   async function init() {
-    const worker = new Worker("/dist/webm-worker.js");
+    const worker = new Worker("/dist/webm-worker.js", {type:"module"});
     worker.postMessage("/dist/webm-wasm.wasm");
     await nextEvent(worker, "message");
     worker.postMessage({
@@ -36,11 +36,14 @@
       height: cvs.height,
       timebaseDen: 30 // fps
     });
+    let t1 = Date.now();
     for(const frame of frames()) {
       worker.postMessage(frame.data.buffer, [frame.data.buffer]);
     }
     worker.postMessage(null);
     const webmBuffer = (await nextEvent(worker, "message")).data;
+    let t = Date.now() - t1;
+    console.log('took', t);
     const url = createBufferURL(webmBuffer, `video/webm; codecs="vp8"`);
 
     video = document.createElement("video");

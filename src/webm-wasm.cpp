@@ -26,6 +26,8 @@
 #include "./mkvwriter/mymkvwriter.hpp"
 #include "./mkvwriter/mymkvstreamwriter.hpp"
 
+#include <vorbis/vorbisenc.h>
+
 using namespace emscripten;
 using namespace mkvmuxer;
 
@@ -38,6 +40,7 @@ class WebmEncoder {
     WebmEncoder(int timebase_num, int timebase_den, unsigned int width, unsigned int height, unsigned int bitrate, bool realtime, bool klive, val cb);
     ~WebmEncoder();
     bool addRGBAFrame(std::string rgba);
+    bool addARGBFrame(std::string argb);
     bool finalize();
     std::string lastError();
 
@@ -47,6 +50,7 @@ class WebmEncoder {
     bool InitImageBuffer();
 
     bool RGBAtoVPXImage(const uint8_t *data);
+    bool ARGBtoVPXImage(const uint8_t *data);
     bool EncodeFrame(vpx_image_t *img);
 
     vpx_codec_ctx_t ctx;
@@ -61,7 +65,7 @@ class WebmEncoder {
 };
 
 WebmEncoder::WebmEncoder(int timebase_num, int timebase_den, unsigned int width, unsigned int height, unsigned int bitrate_kbps, bool realtime_, bool klive, val cb): realtime(realtime_) {
-
+  printf("WebmEncoder klive=%d realtime=%d\n", klive, realtime);
   if(!InitCodec(timebase_num, timebase_den, width, height, bitrate_kbps)) {
     throw last_error;
   }
@@ -76,7 +80,7 @@ WebmEncoder::WebmEncoder(int timebase_num, int timebase_den, unsigned int width,
 WebmEncoder::~WebmEncoder() {
   vpx_img_free(img);
   delete main_segment;
-  if(realtime) {
+    if(realtime) {
     delete (MyMkvStreamWriter*)mkv_writer;
   } else {
     delete (MyMkvWriter*)mkv_writer;
@@ -94,14 +98,27 @@ bool WebmEncoder::addRGBAFrame(std::string rgba) {
   return true;
 }
 
+bool WebmEncoder::addARGBFrame(std::string argb) {
+  ARGBtoVPXImage((const uint8_t*) argb.c_str());
+  if(!EncodeFrame(img)) {
+    return false;
+  }
+  if(realtime) {
+    ((MyMkvStreamWriter*)mkv_writer)->Notify();
+  }
+  return true;
+}
+
 bool WebmEncoder::finalize() {
+  printf("WebmEncoder::finalize frame_cnt=%d\n", frame_cnt);
   if(!EncodeFrame(NULL)) {
     last_error = "Could not encode flush frame";
     return false;
   }
-
+  SegmentInfo *segment_info = main_segment->GetSegmentInfo();
   if(!main_segment->Finalize()) {
     last_error = "Could not finalize mkv";
+    printf("%s\n", last_error.c_str());
     return false;
   }
   if(realtime) {
@@ -198,15 +215,21 @@ bool WebmEncoder::InitMkvWriter(bool klive, val cb) {
     last_error = "Could not initialize main segment";
     return false;
   }
-  if(main_segment->AddVideoTrack(cfg.g_w, cfg.g_h, 1 /* track id */) == 0) {
+  int vtnum=main_segment->AddVideoTrack(cfg.g_w, cfg.g_h, 1 /* track id */);
+  if (vtnum == 0) {
     last_error = "Could not add video track";
     return false;
   }
+  VideoTrack *vt = (VideoTrack*)main_segment->GetTrackByNumber(vtnum);
+  vt->set_display_width(640);
+  vt->set_display_height(512);
+
+  //main_segment->set_estimate_file_duration(true);
   main_segment->set_mode(klive ? Segment::Mode::kLive : Segment::Mode::kFile);
   auto info = main_segment->GetSegmentInfo();
   // Branding, yo
-  auto muxing_app = std::string(info->muxing_app()) + " but in wasm";
-  auto writing_app = std::string(info->writing_app()) + " but in wasm";
+  auto muxing_app = std::string(info->muxing_app()) + " (WASM)";
+  auto writing_app = std::string(info->writing_app()) + " (WASM)";
   info->set_writing_app(writing_app.c_str());
   info->set_muxing_app(muxing_app.c_str());
   return true;
@@ -237,6 +260,27 @@ bool WebmEncoder::RGBAtoVPXImage(const uint8_t *rgba) {
       // from RGBA to ARGB.
       rgba-1,
       cfg.g_w*4,
+      img->planes[VPX_PLANE_Y],
+      img->stride[VPX_PLANE_Y],
+      img->planes[VPX_PLANE_U],
+      img->stride[VPX_PLANE_U],
+      img->planes[VPX_PLANE_V],
+      img->stride[VPX_PLANE_V],
+      cfg.g_w,
+      cfg.g_h
+    ) != 0) {
+    last_error = "Could not convert to I420";
+    return false;
+  }
+  return true;
+}
+
+bool WebmEncoder::ARGBtoVPXImage(const uint8_t *argb) {
+  //clear_image(img);
+  if(
+    libyuv::ARGBToI420(
+      argb,
+      2048*4,
       img->planes[VPX_PLANE_Y],
       img->stride[VPX_PLANE_Y],
       img->planes[VPX_PLANE_U],
@@ -286,6 +330,7 @@ EMSCRIPTEN_BINDINGS(my_module) {
   class_<WebmEncoder>("WebmEncoder")
     .constructor<int, int, unsigned int, unsigned int, unsigned int, bool, bool, val>()
     .function("addRGBAFrame", &WebmEncoder::addRGBAFrame)
+    .function("addARGBFrame", &WebmEncoder::addARGBFrame)
     .function("finalize", &WebmEncoder::finalize)
     .function("lastError", &WebmEncoder::lastError);
 }
